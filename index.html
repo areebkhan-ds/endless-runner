@@ -69,7 +69,7 @@
   <div class="stat"><span id="speed">1.0x</span><span class="label">SPEED</span></div>
 </div>
 
-<div id="stumbleMsg">Oops!</div>
+<div id="stumbleMsg">POKAA!</div>
 
 <canvas id="gameCanvas"></canvas>
 
@@ -189,8 +189,9 @@
     if(musicTimer){ clearInterval(musicTimer); musicTimer = null; }
   }
 
-  // const failAudio = new Audio('fail.mp3'); // or 'sounds/fail.mp3' if in a subfolder
-  //   failAudio.volume = 0.7;
+  const failAudio = new Audio('fail.mp3'); // or 'sounds/fail.mp3' if in a subfolder
+    failAudio.volume = 0.7;
+
   // "Faaa" fail sound — descending trombone-style wah on stumble
   function playFailSound(){
     if(musicMuted || !audioCtx) return;
