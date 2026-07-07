@@ -34,14 +34,15 @@
   }
   #controls {
     position:fixed; bottom:0; left:0; width:100%;
-    display:flex; justify-content:center; gap:10px;
-    padding:14px; z-index:10;
+    display:flex; justify-content:center; gap:8px;
+    padding:12px; z-index:10;
+    flex-wrap:wrap;
   }
   #controls button {
     background:rgba(255,255,255,.25);
     border:2px solid rgba(255,255,255,.6);
-    color:#fff; font-size:15px; font-weight:bold;
-    padding:10px 16px; border-radius:10px;
+    color:#fff; font-size:14px; font-weight:bold;
+    padding:10px 14px; border-radius:10px;
     backdrop-filter: blur(4px);
     user-select:none;
   }
@@ -77,6 +78,7 @@
   <button id="btnJump">▲ Jump</button>
   <button id="btnSlide">▼ Slide</button>
   <button id="btnRight">Right ▶</button>
+  <button id="btnMute">🔊</button>
 </div>
 
 <div id="startOverlay">
@@ -138,6 +140,95 @@
   let lastTime = 0;
 
   function laneToX(lane){ return laneX[lane]; }
+
+  // ---------- Audio Engine (all sounds synthesized, no external files) ----------
+  let audioCtx = null;
+  let musicMuted = false;
+  let musicTimer = null;
+  let musicStep = 0;
+
+  function initAudio(){
+    if(audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  function playTone(freq, startTime, duration, type='sine', vol=0.15){
+    if(musicMuted || !audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, startTime);
+    gain.gain.setValueAtTime(vol, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+  }
+
+  // Cheerful looping background arpeggio, scheduled a bar at a time
+  const musicNotes = [261.6, 329.6, 392.0, 329.6, 261.6, 329.6, 392.0, 523.3]; // C E G E C E G C
+  function scheduleMusicBar(){
+    if(!audioCtx || musicMuted) return;
+    const now = audioCtx.currentTime;
+    const noteLen = 0.22;
+    for(let i=0;i<musicNotes.length;i++){
+      playTone(musicNotes[i], now + i*noteLen, noteLen*0.9, 'triangle', 0.06);
+    }
+    // soft bass note under the bar
+    playTone(musicNotes[0]/2, now, noteLen*musicNotes.length, 'sine', 0.05);
+  }
+  function startBackgroundMusic(){
+    initAudio();
+    if(musicTimer) return;
+    scheduleMusicBar();
+    const barDuration = 0.22 * musicNotes.length * 1000;
+    musicTimer = setInterval(scheduleMusicBar, barDuration);
+  }
+  function stopBackgroundMusic(){
+    if(musicTimer){ clearInterval(musicTimer); musicTimer = null; }
+  }
+
+  // const failAudio = new Audio('fail.mp3'); // or 'sounds/fail.mp3' if in a subfolder
+  //   failAudio.volume = 0.7;
+  // "Faaa" fail sound — descending trombone-style wah on stumble
+  function playFailSound(){
+    if(musicMuted || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.55);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.6);
+  }
+
+  // Bright coin-collect chime
+  function playCoinSound(){
+    if(musicMuted || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    playTone(880, now, 0.12, 'square', 0.12);
+    playTone(1318.5, now + 0.05, 0.15, 'square', 0.1);
+  }
+
+  function vibrate(pattern){
+    if(navigator.vibrate){
+      try{ navigator.vibrate(pattern); }catch(e){}
+    }
+  }
+
+  document.getElementById('btnMute').addEventListener('click', () => {
+    musicMuted = !musicMuted;
+    document.getElementById('btnMute').textContent = musicMuted ? '🔇' : '🔊';
+    if(musicMuted) stopBackgroundMusic();
+    else startBackgroundMusic();
+  });
 
   function resetPlayer(){
     player.lane = 1;
@@ -268,6 +359,7 @@
         c.collected = true;
         coinCount++;
         addSparkle(c.lane);
+        playCoinSound();
       }
     }
 
@@ -304,6 +396,8 @@
     const msg = document.getElementById('stumbleMsg');
     msg.style.opacity = 1;
     setTimeout(()=>{ msg.style.opacity = 0; }, 500);
+    playFailSound();
+    vibrate([120, 60, 120]);
     // small screen shake via particles
     for(let i=0;i<10;i++){
       particles.push({
@@ -484,6 +578,8 @@
     score = 0; coinCount = 0; distance = 0; speed = baseSpeed;
     spawnTimer = 60; coinSpawnTimer = 90;
     running = true;
+    initAudio();
+    startBackgroundMusic();
   });
 
   requestAnimationFrame(loop);
