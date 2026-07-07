@@ -141,11 +141,15 @@
 
   function laneToX(lane){ return laneX[lane]; }
 
-  // ---------- Audio Engine (all sounds synthesized, no external files) ----------
+  // ---------- Audio Engine ----------
   let audioCtx = null;
   let musicMuted = false;
   let musicTimer = null;
   let musicStep = 0;
+
+  // Load your external hit sound file here
+  const hitSound = new Audio('faaah.mp3');
+  hitSound.volume = 0.7;
 
   function initAudio(){
     if(audioCtx) return;
@@ -187,27 +191,6 @@
   }
   function stopBackgroundMusic(){
     if(musicTimer){ clearInterval(musicTimer); musicTimer = null; }
-  }
-
-  const failAudio = new Audio('fail.mp3'); // or 'sounds/fail.mp3' if in a subfolder
-    failAudio.volume = 0.7;
-
-  // "Faaa" fail sound — descending trombone-style wah on stumble
-  function playFailSound(){
-    if(musicMuted || !audioCtx) return;
-    const now = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(300, now);
-    osc.frequency.exponentialRampToValueAtTime(90, now + 0.55);
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.22, now + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(now);
-    osc.stop(now + 0.6);
   }
 
   // Bright coin-collect chime
@@ -289,7 +272,7 @@
   // ---------- Spawning ----------
   function spawnObstacle(){
     const lane = Math.floor(Math.random() * LANES);
-    const type = Math.random() < 0.5 ? 'low' : 'high'; // low = jump over, high = slide under
+    const type = Math.random() < 0.5 ? 'low' : 'high';
     obstacles.push({ lane, type, z: 1200, passed:false });
   }
   function spawnCoinRow(){
@@ -304,11 +287,10 @@
   function update(dt){
     distance += speed * dt * 0.06;
     score = Math.floor(distance);
-    speed = baseSpeed + Math.min(distance / 400, 10); // gradually speeds up, caps growth
+    speed = baseSpeed + Math.min(distance / 400, 10);
 
-    // player vertical physics
     if(player.jumping){
-      player.vy += 0.9; // gravity
+      player.vy += 0.9;
       player.y += player.vy;
       if(player.y >= 0){
         player.y = 0;
@@ -324,11 +306,10 @@
 
     player.runFrame += dt * (player.sliding ? 0.15 : 0.25) * speed;
 
-    // spawn logic
     spawnTimer -= dt;
     if(spawnTimer <= 0){
       spawnObstacle();
-      spawnTimer = Math.max(45, 90 - speed*3) ; // spawn faster as speed increases, floor limit
+      spawnTimer = Math.max(45, 90 - speed*3) ;
     }
     coinSpawnTimer -= dt;
     if(coinSpawnTimer <= 0){
@@ -336,11 +317,9 @@
       coinSpawnTimer = 110 + Math.random()*60;
     }
 
-    // move obstacles/coins toward player
     for(const o of obstacles){ o.z -= speed * dt * 0.9; }
     for(const c of coins){ c.z -= speed * dt * 0.9; }
 
-    // collision check
     const playerZoneNear = 40, playerZoneFar = 110;
     for(const o of obstacles){
       if(!o.passed && o.lane === player.lane && o.z < playerZoneFar && o.z > playerZoneNear){
@@ -356,7 +335,6 @@
 
     for(const c of coins){
       if(!c.collected && c.lane === player.lane && c.z < playerZoneFar && c.z > playerZoneNear){
-        // if sliding under a "high" area coins still collectible; simple lane+z match
         c.collected = true;
         coinCount++;
         addSparkle(c.lane);
@@ -364,15 +342,12 @@
       }
     }
 
-    // cleanup
     obstacles = obstacles.filter(o => o.z > -80);
     coins = coins.filter(c => c.z > -80 && !c.collected);
 
-    // particles
     for(const p of particles){ p.life -= dt; p.y -= dt*1.5; }
     particles = particles.filter(p => p.life > 0);
 
-    // update HUD
     document.getElementById('score').textContent = score;
     document.getElementById('coins').textContent = coinCount;
     document.getElementById('speed').textContent = (speed/baseSpeed).toFixed(1) + 'x';
@@ -391,15 +366,19 @@
   }
 
   function triggerStumble(){
-    // NEVER ends the game — just a visual stumble + small score/coin penalty
     player.stumbleTimer = 30;
     coinCount = Math.max(0, coinCount - 1);
     const msg = document.getElementById('stumbleMsg');
     msg.style.opacity = 1;
     setTimeout(()=>{ msg.style.opacity = 0; }, 500);
-    playFailSound();
+    
+    // Play the external 'faaah.mp3' file if the audio is not muted
+    if (!musicMuted) {
+      hitSound.currentTime = 0; // Resets track to start position
+      hitSound.play().catch(error => console.log("Audio playback failed:", error));
+    }
+
     vibrate([120, 60, 120]);
-    // small screen shake via particles
     for(let i=0;i<10;i++){
       particles.push({
         x: player.x + (Math.random()-0.5)*40,
@@ -412,7 +391,6 @@
 
   // ---------- Draw ----------
   function project(zBase, laneIdx){
-    // simple pseudo-3D projection: further z = smaller & higher on screen
     const z = zBase;
     const scale = 1 / (1 + z/300);
     const horizonY = H * 0.32;
@@ -423,14 +401,12 @@
   }
 
   function drawBackground(){
-    // sky
     const grad = ctx.createLinearGradient(0,0,0,H);
     grad.addColorStop(0, '#7ec8e3');
     grad.addColorStop(1, '#cfead0');
     ctx.fillStyle = grad;
     ctx.fillRect(0,0,W,H);
 
-    // ground
     ctx.fillStyle = '#8a7355';
     ctx.beginPath();
     ctx.moveTo(0, H);
@@ -439,7 +415,6 @@
     ctx.lineTo(W, H);
     ctx.fill();
 
-    // track
     const p1 = project(1200, 0), p2 = project(1200, 2);
     ctx.fillStyle = '#c9a876';
     ctx.beginPath();
@@ -449,7 +424,6 @@
     ctx.lineTo(laneX[0], groundY());
     ctx.fill();
 
-    // lane dividers (moving)
     ctx.strokeStyle = 'rgba(255,255,255,0.5)';
     ctx.lineWidth = 3;
     const offset = (distance*4) % 60;
@@ -460,7 +434,6 @@
         const frac = (d)/1200;
       }
     }
-    // simple dashed center lines using projection at intervals
     for(let lane=1; lane<LANES; lane++){
       for(let z = 0; z < 1200; z += 80){
         const zz = (z + offset*20) % 1200;
@@ -475,12 +448,10 @@
     const baseY = p.y;
     ctx.fillStyle = o.type === 'low' ? '#e74c3c' : '#8e44ad';
     if(o.type === 'low'){
-      // low barrier to jump over
       ctx.fillRect(p.x - w/2, baseY - h, w, h);
       ctx.fillStyle = 'rgba(255,255,255,0.3)';
       ctx.fillRect(p.x - w/2, baseY - h, w, 6*p.scale);
     } else {
-      // overhead bar to slide under
       ctx.fillRect(p.x - w/2, baseY - h, w, h*0.35);
       ctx.fillStyle = '#5e3370';
       ctx.fillRect(p.x - w/2 - 5*p.scale, baseY - h, 8*p.scale, h);
@@ -506,30 +477,26 @@
     const shakeX = player.stumbleTimer > 0 ? (Math.random()-0.5)*8 : 0;
     const groundYPos = groundY();
     let h = player.height;
-    let yOffset = player.y; // negative when jumping
+    let yOffset = player.y;
     if(player.sliding) h *= 0.55;
 
     const px = x + shakeX;
     const py = groundYPos + yOffset;
 
-    // shadow
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath();
     ctx.ellipse(px, groundYPos + 8, 26, 8, 0, 0, Math.PI*2);
     ctx.fill();
 
-    // body
     ctx.fillStyle = player.stumbleTimer > 0 ? '#ff8080' : '#3498db';
     const bodyW = player.width;
     ctx.fillRect(px - bodyW/2, py - h, bodyW, h);
 
-    // head
     ctx.fillStyle = '#f5c396';
     ctx.beginPath();
     ctx.arc(px, py - h - 14, 16, 0, Math.PI*2);
     ctx.fill();
 
-    // simple running legs animation (only when not sliding/jumping visually distinct)
     ctx.fillStyle = '#2c3e50';
     const legSwing = Math.sin(player.runFrame) * 10;
     ctx.fillRect(px - 16, py - 4, 10, 14 + legSwing*0.3);
@@ -549,7 +516,6 @@
 
   function draw(){
     drawBackground();
-    // draw far to near
     const drawables = [
       ...obstacles.map(o => ({ z:o.z, draw: () => drawObstacle(o) })),
       ...coins.map(c => ({ z:c.z, draw: () => drawCoin(c) }))
@@ -562,7 +528,7 @@
   // ---------- Loop ----------
   function loop(ts){
     if(!lastTime) lastTime = ts;
-    const dt = Math.min((ts - lastTime) / 16.67, 3); // normalize to ~60fps steps, cap for tab-switch
+    const dt = Math.min((ts - lastTime) / 16.67, 3);
     lastTime = ts;
     if(running){
       update(dt);
